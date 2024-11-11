@@ -117,7 +117,7 @@ class CustomSemanticKITTIDataset(SemanticKITTIDataset):
         scans = []
         for sequence in self.sequences:
             calib = self.read_calib(
-                os.path.join(self.data_root, "dataset", "sequences", sequence, "calib.txt")
+                os.path.join(self.data_root, "sequences", sequence, "calib.txt")
             )
             P2 = calib["P2"]
             P3 = calib["P3"]
@@ -126,8 +126,8 @@ class CustomSemanticKITTIDataset(SemanticKITTIDataset):
             proj_matrix_3 = P3 @ T_velo_2_cam
 
             voxel_base_path = os.path.join(self.ann_file, sequence)
-            img_base_path = os.path.join(self.data_root, "dataset", "sequences", sequence)
-            id_base_path = os.path.join(self.data_root, "dataset", "sequences", sequence, 'voxels', '*.bin')
+            img_base_path = os.path.join(self.data_root, "sequences", sequence)
+            id_base_path = os.path.join(self.data_root, "sequences", sequence, 'voxels', '*.bin')
             for id_path in glob.glob(id_base_path):
                 img_id = id_path.split("/")[-1].split(".")[0]
                 img_2_path = os.path.join(img_base_path, 'image_2', img_id + '.png')

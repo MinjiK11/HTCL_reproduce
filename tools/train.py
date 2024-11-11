@@ -38,7 +38,7 @@ sys.path.append('.')
 
 def parse_args():
     parser = argparse.ArgumentParser(description='Train a detector')
-    parser.add_argument('config', default=None, help='train config file path')
+    parser.add_argument('--config', help='train config file path',default='HTCL/code/projects/configs/occupancy/semantickitti/temporal_baseline.py')
     parser.add_argument('--work-dir', default="work_dirs/baseline_0630_temporal", help='the dir to save logs and models')
     parser.add_argument('--loadcheckpoint', default=None, 
         help="the dir to load models" )
@@ -117,6 +117,8 @@ def main():
     if cfg.get('custom_imports', None):
         from mmcv.utils import import_modules_from_strings
         import_modules_from_strings(**cfg['custom_imports'])
+
+    sys.path.append('/share/HTCL/code')
 
     # import modules from plguin/xx, registry will be updated
     if hasattr(cfg, 'plugin'):

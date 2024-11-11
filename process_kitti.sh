@@ -1,6 +1,6 @@
 cd $(readlink -f `dirname $0`)
 # source /mnt/cfs/algorithm/yunpeng.zhang/.bashrc
-conda activate occupancy
+# conda activate occupancy
 
 export PYTHONPATH="."
 export OMP_NUM_THREADS=8

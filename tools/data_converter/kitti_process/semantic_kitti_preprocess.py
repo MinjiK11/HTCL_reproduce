@@ -7,6 +7,8 @@ import numpy.matlib
 import os
 import glob
 import sys
+
+sys.path.append('/share/HTCL/code')
 import tools.data_converter.kitti_process.io_data as SemanticKittiIO
 import argparse
 
@@ -104,7 +106,7 @@ def main(cfg):
 
     for sequence in sequences:
         sequence_path = os.path.join(
-            cfg.kitti_root, "dataset", "sequences", sequence
+            cfg.kitti_root, "sequences", sequence
         )
         label_paths = sorted(
             glob.glob(os.path.join(sequence_path, "voxels", "*.label"))

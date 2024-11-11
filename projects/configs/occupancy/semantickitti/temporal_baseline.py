@@ -67,8 +67,10 @@ model = dict(
         norm_eval=False,
         out_indices=(2, 3, 4, 5, 6),
         with_cp=True,
-        init_cfg=dict(type='Pretrained', prefix='backbone', 
-        checkpoint='./pretrain/efficientnet-b7_3rdparty_8xb32-aa_in1k_20220119-bf03951c.pth'),
+        # init_cfg=dict(type='Pretrained', prefix='backbone', 
+        # checkpoint='HTCL/code/pretrain/semantic_kitti_checkpoint.pth'),
+        init_cfg=dict(type='Pretrained', 
+        checkpoint='HTCL/code/pretrain/semantic_kitti_checkpoint.pth')
     ),
     img_neck=dict(
         type='SECONDFPN',
@@ -130,8 +132,8 @@ model = dict(
 )
 
 dataset_type = 'CustomSemanticKITTILssDataset'
-data_root = './data/occupancy/semanticKITTI/RGB/'
-ann_file = './data/occupancy/semanticKITTI/lss-semantic_kitti_voxel_label/labels/'
+data_root = 'HTCL/code/data/occupancy/semanticKITTI/RGB'
+ann_file = 'HTCL/code/data/occupancy/semanticKITTI/lss-semantic_kitti_voxel_label'
 file_client_args = dict(backend='disk')
 
 bda_aug_conf = dict(
