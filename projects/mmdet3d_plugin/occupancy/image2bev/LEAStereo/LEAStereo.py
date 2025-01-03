@@ -84,8 +84,8 @@ class LEA_encoder(nn.Module):
 
     def forward(self, x, y, calib):  
        
-        x = self.feature(x)     
-        y  = self.feature(y)    
+        x = self.feature(x) # left ref. img   
+        y  = self.feature(y) # right ref. img
 
         with torch.cuda.device_of(x):
             cost = x.new().resize_(x.size()[0], x.size()[1]*2, int(self.maxdisp/3),  x.size()[2],  x.size()[3]).zero_() 

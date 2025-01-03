@@ -62,7 +62,7 @@ class CustomSemanticKITTIDataset(SemanticKITTIDataset):
     This datset only add camera intrinsics and extrinsics to the results.
     """
 
-    def __init__(self, split, camera_used, occ_size, pc_range, queue_length=1,  bev_size=(200, 200), *args, **kwargs):
+    def __init__(self, split, camera_used, occ_size, pc_range, queue_length=1,  bev_size=(200, 200),aux_data_root=None, *args, **kwargs):
         self.queue_length = queue_length
         self.bev_size = bev_size
         self.occ_size = occ_size
@@ -76,9 +76,18 @@ class CustomSemanticKITTIDataset(SemanticKITTIDataset):
             "test": ["08"],
             # "test": ["11", "12", "13", "14", "15", "16", "17", "18", "19", "20", "21"],
         }
+
+        # self.splits = {
+        #     "train": ["03"],
+        #     "val": ["08"],
+        #     "test": ["08"],
+        #     # "test": ["11", "12", "13", "14", "15", "16", "17", "18", "19", "20", "21"],
+        # }
+
         self.sequences = self.splits[split]
         self.n_classes = 20
-        super().__init__(*args, **kwargs)
+        self.aux_data_root=aux_data_root
+        super().__init__(*args, **kwargs) 
         self._set_group_flag()
 
     @staticmethod
@@ -115,9 +124,10 @@ class CustomSemanticKITTIDataset(SemanticKITTIDataset):
 
     def load_annotations(self, ann_file):
         scans = []
+
         for sequence in self.sequences:
             calib = self.read_calib(
-                os.path.join(self.data_root, "sequences", sequence, "calib.txt")
+                os.path.join(self.aux_data_root, "sequences", sequence, "calib.txt")
             )
             P2 = calib["P2"]
             P3 = calib["P3"]
@@ -127,14 +137,36 @@ class CustomSemanticKITTIDataset(SemanticKITTIDataset):
 
             voxel_base_path = os.path.join(self.ann_file, sequence)
             img_base_path = os.path.join(self.data_root, "sequences", sequence)
-            id_base_path = os.path.join(self.data_root, "sequences", sequence, 'voxels', '*.bin')
-            for id_path in glob.glob(id_base_path):
-                img_id = id_path.split("/")[-1].split(".")[0]
-                img_2_path = os.path.join(img_base_path, 'image_2', img_id + '.png')
-                img_3_path = os.path.join(img_base_path, 'image_3', img_id + '.png')
-                calib_path = os.path.join(img_base_path, 'calib.txt')
+            # id_base_path = os.path.join(self.data_root, "sequences", sequence, 'voxels', '*.bin')
+            id_base_path = os.path.join(self.aux_data_root, "sequences", sequence, 'voxels', '*.bin')
 
-                voxel_path = os.path.join(voxel_base_path, img_id + '_1_1.npy')
+            img_num=len(os.listdir(os.path.join(self.aux_data_root,"sequences",sequence,'image_2')))
+            
+            id_path_list = glob.glob(id_base_path)
+            for id_path in id_path_list:
+                img_id = id_path.split("/")[-1].split(".")[0]
+                voxel_id = img_id
+
+                if self.modality['use_event']:
+                    extension='.npy'
+                    event_id = img_id.lstrip("0")
+                    if img_id=="000000":
+                        event_id='1'
+                    elif event_id==str(img_num-1):
+                        event_id=str(img_num-2)
+                    img_id=event_id
+
+                elif self.modality['use_camera']:
+                    extension='.png'
+
+                # img_2_path = os.path.join(img_base_path, 'image_2', img_id + '.png')
+                img_2_path = os.path.join(img_base_path, 'image_2', img_id + extension)
+                # img_3_path = os.path.join(img_base_path, 'image_3', img_id + '.png')
+                img_3_path = os.path.join(img_base_path, 'image_3', img_id + extension)
+                # calib_path = os.path.join(img_base_path, 'calib.txt')
+                calib_path = os.path.join(self.aux_data_root,"sequences",sequence, 'calib.txt')
+
+                voxel_path = os.path.join(voxel_base_path, voxel_id + '_1_1.npy')
                 if not os.path.exists(voxel_path):
                     voxel_path = None
                 scans.append(
@@ -148,7 +180,8 @@ class CustomSemanticKITTIDataset(SemanticKITTIDataset):
                         "proj_matrix_2": proj_matrix_2,
                         "proj_matrix_3": proj_matrix_3,
                         "voxel_path": voxel_path,
-                        'calib_path': calib_path 
+                        'calib_path': calib_path,
+                        "input_modality": self.modality 
                     }
                 )
         return scans  # return to self.data_infos
@@ -204,7 +237,7 @@ class CustomSemanticKITTIDataset(SemanticKITTIDataset):
             pc_range = np.array(self.pc_range),
         )
 
-        if self.modality['use_camera']:
+        if self.modality['use_camera'] or self.modality['use_event']:
             image_paths = []
             # image_paths2 = []
             lidar2img_rts = []
@@ -218,7 +251,6 @@ class CustomSemanticKITTIDataset(SemanticKITTIDataset):
             input_dict.update(
                 dict(
                     img_filename=image_paths,
-                 
                     lidar2img=lidar2img_rts,
                     cam_intrinsic=cam_intrinsics,
                 ))

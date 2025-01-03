@@ -73,7 +73,7 @@ class temporal_encoder(torch.nn.Module):
         ref_image = ref_images.squeeze(1)
         for temporal in range( 0, T ):
             source_image = source_images[:, temporal, ...]
-            input_image, original_size = self.load_and_preprocess_image(ref_image )
+            input_image, original_size = self.load_and_preprocess_image(ref_image ) # normalization
             source_image, _ = self.load_and_preprocess_image(source_image )
 
             with torch.no_grad():

@@ -101,7 +101,7 @@ def get_inv_map():
   remap_lut to remap classes of semantic kitti for training...
   :return:
   '''
-  config_path = "semantickitti.yaml"
+  config_path = "HTCL/code/tools/data_converter/kitti_process/semantic-kitti.yaml"
   dataset_config = yaml.safe_load(open(config_path, 'r'))
   # make lookup table for mapping
 

@@ -57,6 +57,8 @@ voxel_out_indices = (0, 1, 2)
 voxel_out_channels = [128, 128, 128]
 norm_cfg = dict(type='GN', num_groups=32, requires_grad=True)
 
+input_type="rgb"
+
 model = dict(
     type='BEVDepthOccupancy',
     img_backbone=dict(
@@ -67,10 +69,10 @@ model = dict(
         norm_eval=False,
         out_indices=(2, 3, 4, 5, 6),
         with_cp=True,
-        # init_cfg=dict(type='Pretrained', prefix='backbone', 
-        # checkpoint='HTCL/code/pretrain/semantic_kitti_checkpoint.pth'),
-        init_cfg=dict(type='Pretrained', 
+        init_cfg=dict(type='Pretrained', prefix='img_backbone', 
         checkpoint='HTCL/code/pretrain/semantic_kitti_checkpoint.pth')
+        # init_cfg=dict(type='Pretrained', 
+        # checkpoint='HTCL/code/pretrain/semantic_kitti_checkpoint.pth')
     ),
     img_neck=dict(
         type='SECONDFPN',
@@ -133,7 +135,7 @@ model = dict(
 
 dataset_type = 'CustomSemanticKITTILssDataset'
 data_root = 'HTCL/code/data/occupancy/semanticKITTI/RGB'
-ann_file = 'HTCL/code/data/occupancy/semanticKITTI/lss-semantic_kitti_voxel_label'
+ann_file = 'HTCL/code/data/occupancy/semanticKITTI/lss-semantic_kitti_voxel_label/labels'
 file_client_args = dict(backend='disk')
 
 bda_aug_conf = dict(
@@ -183,7 +185,7 @@ test_config=dict(
 )
 
 data = dict(
-    samples_per_gpu=2,
+    samples_per_gpu=1,
     workers_per_gpu=8,
     train=dict(
         type=dataset_type,
@@ -198,6 +200,7 @@ data = dict(
         queue_length = queue_length,
         split='train',
         camera_used=camera_used,
+        input_type=input_type
     ),
     val=test_config,
     test=test_config,
@@ -219,8 +222,8 @@ lr_config = dict(
     step=[20, 25],
 )
 
-checkpoint_config = dict(max_keep_ckpts=30, interval=1)
-runner = dict(type='EpochBasedRunner', max_epochs=30)
+checkpoint_config = dict(max_keep_ckpts=24, interval=1)
+runner = dict(type='EpochBasedRunner', max_epochs=24)
 
 evaluation = dict(
     interval=1,
@@ -228,3 +231,15 @@ evaluation = dict(
     save_best='semkitti_combined_IoU',
     rule='greater',
 )
+
+# log_config = dict(
+#    interval=5,
+#    hooks=[
+#        dict(type='TextLoggerHook'),
+#     #    dict(type='TensorboardLoggerHook')
+#        dict(type='WandbLoggerHook',
+#             init_kwargs={
+#                 'project':'HTCL',
+#                 'entity':'minji11'
+#             })
+#    ])

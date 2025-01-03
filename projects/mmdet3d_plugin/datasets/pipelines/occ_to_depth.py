@@ -235,16 +235,26 @@ class CreateDepthFromLiDAR(object):
 
     def __call__(self, results):
         ####################--------------------------1----------------------------#########################
-        img_filename = results['img_filename'][0]
+        img_filename = results['img_filename'][0] # left img
         seq_id, _, filename = img_filename.split("/")[-3:]
         
         # loading lidar points
-        lidar_filename = os.path.join(self.lidar_root, seq_id, "velodyne", filename.replace(".png", ".bin"))
+        if results['input_modality']['use_camera']:
+            lidar_filename = os.path.join(self.lidar_root, seq_id, "velodyne", filename.replace(".png", ".bin"))
+        elif results['input_modality']['use_event']:
+            lidarname = filename[:-4].zfill(6)
+            lidar_filename=os.path.join(self.lidar_root,seq_id,"velodyne",lidarname+".bin")
+
         lidar_points = np.fromfile(lidar_filename, dtype=np.float32).reshape(-1, 4)
         lidar_points = torch.from_numpy(lidar_points[:, :3]).float()
         
         # loading lidarseg labels
-        lidarseg_filename = os.path.join(self.lidarseg_root, seq_id, "labels", filename.replace(".png", ".label"))
+        if results['input_modality']['use_camera']:
+            lidarseg_filename = os.path.join(self.lidarseg_root, seq_id, "labels", filename.replace(".png", ".label"))
+        elif results['input_modality']['use_event']:
+            lidarsegname=filename[:-4].zfill(6)
+            lidarseg_filename = os.path.join(self.lidarseg_root,seq_id, "labels",lidarsegname+".label")
+
         lidarseg = np.fromfile(lidarseg_filename, dtype=np.uint32).reshape((-1, 1))
         lidarseg = lidarseg & 0xFFFF
         lidarseg = np.vectorize(self.learning_map.__getitem__)(lidarseg)
@@ -252,7 +262,7 @@ class CreateDepthFromLiDAR(object):
         lidarseg = torch.from_numpy(lidarseg.astype(np.int32)).float()
         flatten_seg = lidarseg.flatten()
         
-        # project voxels onto the image plane
+        # project voxels onto the image plane (lidar2img)
         imgs, rots, trans, intrins, post_rots, post_trans = results['img_inputs'][0][:6]
         projected_points = self.project_points(lidar_points, rots, trans, intrins, post_rots, post_trans)[:, 0]
         
@@ -274,7 +284,7 @@ class CreateDepthFromLiDAR(object):
             lidar_points = lidar_points @ bda_mat.t()
         
         # perform range mask
-        range_valid_mask = (lidar_points >= self.point_cloud_range[:3]) & (lidar_points <= self.point_cloud_range[3:])
+        range_valid_mask = (lidar_points >= self.point_cloud_range[:3]) & (lidar_points <= self.point_cloud_range[3:]) # valid lidar point (within point cloud range)
         range_valid_mask = range_valid_mask.all(dim=1)
         # if self.projective_filter:
         #     # query points are visible from both voxels and images
@@ -346,12 +356,20 @@ class CreateDepthFromLiDAR(object):
         seq_id, _, filename = img_filename.split("/")[-3:]
         
         # loading lidar points
-        lidar_filename = os.path.join(self.lidar_root, seq_id, "velodyne", filename.replace(".png", ".bin"))
+        if results['input_modality']['use_camera']:
+            lidar_filename = os.path.join(self.lidar_root, seq_id, "velodyne", filename.replace(".png", ".bin"))
+        elif results['input_modality']['use_event']:
+            lidarname = filename[:-4].zfill(6)
+            lidar_filename=os.path.join(self.lidar_root,seq_id,"velodyne",lidarname+".bin")
         lidar_points = np.fromfile(lidar_filename, dtype=np.float32).reshape(-1, 4)
         lidar_points = torch.from_numpy(lidar_points[:, :3]).float()
         
         # loading lidarseg labels
-        lidarseg_filename = os.path.join(self.lidarseg_root, seq_id, "labels", filename.replace(".png", ".label"))
+        if results['input_modality']['use_camera']:
+            lidarseg_filename = os.path.join(self.lidarseg_root, seq_id, "labels", filename.replace(".png", ".label"))
+        elif results['input_modality']['use_event']:
+            lidarsegname=filename[:-4].zfill(6)
+            lidarseg_filename = os.path.join(self.lidarseg_root,seq_id, "labels",lidarsegname+".label")
         lidarseg = np.fromfile(lidarseg_filename, dtype=np.uint32).reshape((-1, 1))
         lidarseg = lidarseg & 0xFFFF
         lidarseg = np.vectorize(self.learning_map.__getitem__)(lidarseg)

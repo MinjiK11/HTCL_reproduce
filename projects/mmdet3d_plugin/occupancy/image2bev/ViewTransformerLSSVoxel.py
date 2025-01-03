@@ -316,12 +316,12 @@ class ViewTransformerLiftSplatShootVoxel(ViewTransformerLSSBEVDepth):
 
         # flatten indices
         geom_xyz = geom_feats.clone()
-        geom_feats = ((geom_feats - (self.bx - self.dx / 2.)) / self.dx).long()
+        geom_feats = ((geom_feats - (self.bx - self.dx / 2.)) / self.dx).long() # real-world coordinate -> voxel grid coordinate
         geom_feats = geom_feats.view(Nprime, 3)
         batch_ix = torch.cat([torch.full([Nprime // B, 1], ix, device=x.device, dtype=torch.long) for ix in range(B)])
         geom_feats = torch.cat((geom_feats, batch_ix), 1)
 
-        # filter out points that are outside box
+        # filter out points that are outside box (voxel grid)
         kept = (geom_feats[:, 0] >= 0) & (geom_feats[:, 0] < self.nx[0]) \
                & (geom_feats[:, 1] >= 0) & (geom_feats[:, 1] < self.nx[1]) \
                & (geom_feats[:, 2] >= 0) & (geom_feats[:, 2] < self.nx[2])
@@ -346,7 +346,7 @@ class ViewTransformerLiftSplatShootVoxel(ViewTransformerLSSBEVDepth):
                 
             else:
                 raise NotImplementedError
-
+        # forming bird's-eye view representation
         final = bev_pool(x, geom_feats, B, self.nx[2], self.nx[0], self.nx[1])
         final = final.permute(0, 1, 3, 4, 2)
 
@@ -357,27 +357,28 @@ class ViewTransformerLiftSplatShootVoxel(ViewTransformerLSSBEVDepth):
         (x, rots, trans, intrins, post_rots, post_trans, bda, mlp_input) = input[:8]
         
         B, N, C, H, W = x.shape 
-        x = x.view(B * N, C, H, W)
+        x = x.view(B * N, C, H, W) # left ref. img feature
 
-        calib = input[16]
+        calib = input[16] # f * baseline
 
         if  imgl.shape[1]>1:
             imgl, imgr = imgl[:, -1, ...], imgr[:, -1, ...]
-        imgl, imgr = F.interpolate(imgl.squeeze(1), size=[288, 960], mode='bilinear', align_corners=True), F.interpolate(imgr.squeeze(1), size=[288, 960], mode='bilinear', align_corners=True) 
+        imgl, imgr = F.interpolate(imgl.squeeze(1), size=[288, 960], mode='bilinear', align_corners=True), F.interpolate(imgr.squeeze(1), size=[288, 960], mode='bilinear', align_corners=True) # left, right ref. img
         stereo_volume = self.leamodel(imgl, imgr, calib )["classfy_volume"]   
         stereo_volume = F.interpolate(stereo_volume, size=[ 112, H, W ], mode='trilinear', align_corners=True).squeeze(1)  
-        stereo_volume = F.softmax(-stereo_volume, dim=1)
+        stereo_volume = F.softmax(-stereo_volume, dim=1) # cost -> confidence (lower cost -> higher confidence)
 
 
         if self.imgseg:  
             self.forward_dic['imgseg_logits'] = self.img_seg_head(x)
-        
-        x = self.depth_net(x, mlp_input)  
+
+        # voxel feature volume construction
+        x = self.depth_net(x, mlp_input) # depth + context
         depth_digit = x[:, :self.D, ...]  
         img_feat = x[:, self.D:self.D + self.numC_Trans, ...] 
         depth_prob = self.get_depth_dist(depth_digit) 
  
-        depth_prob, auxility = self.volume_interaction(stereo_volume, depth_prob)  
+        depth_prob, auxility = self.volume_interaction(stereo_volume, depth_prob) 
        
         
         if self.imgseg and self.lift_with_imgseg:
@@ -387,34 +388,35 @@ class ViewTransformerLiftSplatShootVoxel(ViewTransformerLSSBEVDepth):
         # Lift
         volume = depth_prob.unsqueeze(1) * img_feat.unsqueeze(2)   
         volume = volume.view(B, N, -1, self.D, H, W)  
-        volume = volume.permute(0, 1, 3, 4, 5, 2)  
+        volume = volume.permute(0, 1, 3, 4, 5, 2) # vo
  
         # Splat
         geom = self.get_geometry(rots, trans, intrins, post_rots, post_trans, bda)  
-        bev_feat = self.voxel_pooling(geom, volume) 
+        bev_feat = self.voxel_pooling(geom, volume) # bird-eye view representation
         
 
-        img_left_ref, img_left_sour = left_input[:, -1, ...].unsqueeze(1).permute(0,1,4,2,3).cuda(), left_input[:,:-1, ...].permute(0,1,4,2,3).cuda()  #
-        curr_feature, batch_waped_feature = self.temporal_encoder( ref_images=img_left_ref, source_images=img_left_sour, intrinsics=intrins ) #
+        img_left_ref, img_left_sour = left_input[:, -1, ...].unsqueeze(1).permute(0,1,4,2,3).cuda(), left_input[:,:-1, ...].permute(0,1,4,2,3).cuda()  # left ref img, left historical frames
+        curr_feature, batch_waped_feature = self.temporal_encoder( ref_images=img_left_ref, source_images=img_left_sour, intrinsics=intrins ) # curr frame feature, warped feature (historical frame)
         
 
         curr_feature = F.interpolate(curr_feature, size=[H, W], mode='bilinear', align_corners=True) 
         batch_waped_feature = F.interpolate(batch_waped_feature, size=[self.D, H, W], mode='trilinear', align_corners=True) 
 
-        defomable_batch_waped_feature = self.temporal_deformable( batch_waped_feature )  
+        defomable_batch_waped_feature = self.temporal_deformable( batch_waped_feature ) # 3D deformable convolution (ADR)
         
-        curr_feature = self.curr_patch( curr_feature ) 
-        batch_waped_feature = self.warped_patch( batch_waped_feature ) 
+        curr_feature = self.curr_patch( curr_feature ) # atrous convolution
+        batch_waped_feature = self.warped_patch( batch_waped_feature ) # atrous convolution
  
 
-        temporal_volume = self.cossim(  (curr_feature-curr_feature.mean(1).unsqueeze(1)).unsqueeze(2).repeat(1,1,self.D,1,1), (batch_waped_feature-batch_waped_feature.mean(1).unsqueeze(1)) ).unsqueeze(1)
-        temporal_volume = (temporal_volume) * defomable_batch_waped_feature
-        
+        temporal_volume = self.cossim(  (curr_feature-curr_feature.mean(1).unsqueeze(1)).unsqueeze(2).repeat(1,1,self.D,1,1), (batch_waped_feature-batch_waped_feature.mean(1).unsqueeze(1)) ).unsqueeze(1) # affinity 
+        temporal_volume = (temporal_volume) * defomable_batch_waped_feature # ADR
+        # temporal_volume = (temporal_volume) * batch_waped_feature # ADR
+
         temporal_volume = self.temporal_prehourglass( temporal_volume )  
           
         temporal_volume = temporal_volume.view(B, N, -1, self.D, H, W)  
         temporal_volume = temporal_volume.permute(0, 1, 3, 4, 5, 2) 
-        temporal_volume = self.voxel_pooling(geom, temporal_volume)   
+        temporal_volume = self.voxel_pooling(geom, temporal_volume) # bev representation  
         temporal_volume =  self.temporal_hourglass(temporal_volume ) 
         temporal_voxel = [temporal_volume]
 

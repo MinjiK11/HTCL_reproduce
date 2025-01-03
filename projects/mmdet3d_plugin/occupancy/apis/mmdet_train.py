@@ -15,7 +15,7 @@ from mmcv.runner import (HOOKS, DistSamplerSeedHook, EpochBasedRunner,
                          build_runner, get_dist_info)
 from mmcv.utils import build_from_cfg
 
-from mmdet.core import EvalHook
+# from mmdet.core import EvalHook
 
 from mmdet.datasets import (build_dataset,
                             replace_ImageToTensor)
@@ -23,7 +23,7 @@ from mmdet.utils import get_root_logger
 import time
 import os.path as osp
 from projects.mmdet3d_plugin.datasets.builder import build_dataloader
-from projects.mmdet3d_plugin.core.evaluation.eval_hooks import OccDistEvalHook
+from projects.mmdet3d_plugin.core.evaluation.eval_hooks import OccDistEvalHook, EvalHook
 from projects.mmdet3d_plugin.datasets import custom_build_dataset
 
 def custom_train_detector(model,

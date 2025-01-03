@@ -108,8 +108,8 @@ class BEVDepthOccupancy(BEVDepth):
         if self.record_time:
             torch.cuda.synchronize()
             t0 = time.time()
-        
-        x = self.img_bev_encoder_backbone(x)  
+        # x: left ref. img bev feature
+        x = self.img_bev_encoder_backbone(x) # layer feature (len: 3)
         
         if self.record_time:
             torch.cuda.synchronize()
@@ -136,16 +136,16 @@ class BEVDepthOccupancy(BEVDepth):
         img_left, img_right = img[0][0], img[1][0]  ### B Temporal N C H W
         B, T, N, C, H, W = img_left.shape
 
-        img_left_ref, img_right_ref = img_left[ :, -1, ... ], img_right[ :, -1, ... ]
-        img_left_sour, img_right_sour = img_left[:,:-1, ... ].squeeze(2).contiguous(), img_right[:,:-1, ... ].squeeze(2).contiguous()
+        img_left_ref, img_right_ref = img_left[ :, -1, ... ], img_right[ :, -1, ... ] # reference img
+        img_left_sour, img_right_sour = img_left[:,:-1, ... ].squeeze(2).contiguous(), img_right[:,:-1, ... ].squeeze(2).contiguous() # temporal imgs
 
-        img_left_ref_feature = self.image_encoder( img_left_ref ) 
+        img_left_ref_feature = self.image_encoder( img_left_ref ) # left img feature
       
 
         x, x2 = img_left_ref_feature, None 
         img_feats = x.clone()
          
-        img, img2 = img[0], img[1]
+        img, img2 = img[0], img[1] 
         filenamesl, filenamesr = img[-1], img2[-1] 
 
 
@@ -282,7 +282,7 @@ class BEVDepthOccupancy(BEVDepth):
             t0 = time.time()
         
         if not self.disable_loss_depth: ## True
-            losses['loss_depth'] = self.img_view_transformer.get_depth_loss(img_inputs[0][7].clone(), depth)  
+            losses['loss_depth'] = self.img_view_transformer.get_depth_loss(img_inputs[0][7].clone(), depth)   
 
 
         if self.record_time:

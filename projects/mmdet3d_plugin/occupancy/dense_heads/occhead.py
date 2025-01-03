@@ -19,6 +19,9 @@ from projects.mmdet3d_plugin.utils.ssc_metric import SSCMetrics
 
 import pdb
 
+import os
+os.environ['CUDA_LAUNCH_BLOCKING']="1"
+
 '''
 TODO:
 [1] points with image features

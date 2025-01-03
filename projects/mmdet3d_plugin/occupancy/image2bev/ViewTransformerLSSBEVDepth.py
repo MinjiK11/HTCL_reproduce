@@ -129,22 +129,23 @@ class ViewTransformerLiftSplatShoot(BaseModule):
 
         # undo post-transformation
         # B x N x D x H x W x 3
-        points = self.frustum - post_trans.view(B, N, 1, 1, 1, 3)
-        points = torch.inverse(post_rots).view(B, N, 1, 1, 1, 3, 3).matmul(points.unsqueeze(-1))
+        points = self.frustum - post_trans.view(B, N, 1, 1, 1, 3) # frustum: grid of 3D points (3D region in space representing the viewable area of the camera)
+        # points = torch.inverse(post_rots).view(B, N, 1, 1, 1, 3, 3).matmul(points.unsqueeze(-1))
+        points = torch.inverse(post_rots.cpu()).to('cuda').view(B, N, 1, 1, 1, 3, 3).matmul(points.unsqueeze(-1))
 
         # cam_to_ego
         points = torch.cat((points[:, :, :, :, :, :2] * points[:, :, :, :, :, 2:3],
                             points[:, :, :, :, :, 2:3]
-                            ), 5)
+                            ), 5) # 3D points in camera coordinates
         
         if intrins.shape[3] == 4: # for KITTI
             shift = intrins[:, :, :3, 3]
             points = points - shift.view(B, N, 1, 1, 1, 3, 1)
             intrins = intrins[:, :, :3, :3]
         
-        combine = rots.matmul(torch.inverse(intrins))
+        combine = rots.matmul(torch.inverse(intrins.cpu()).to('cuda'))
         points = combine.view(B, N, 1, 1, 1, 3, 3).matmul(points).squeeze(-1)
-        points += trans.view(B, N, 1, 1, 1, 3)
+        points += trans.view(B, N, 1, 1, 1, 3) # 3D coordinate in world frame
         
         if bda.shape[-1] == 4:
             points = torch.cat((points, torch.ones(*points.shape[:-1], 1).type_as(points)), dim=-1)

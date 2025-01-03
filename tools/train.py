@@ -34,11 +34,11 @@ from mmcv.utils import TORCH_VERSION, digit_version
 import sys
 sys.path.append('.')
 
-# torch.autograd.set_detect_anomaly(True)
 
 def parse_args():
     parser = argparse.ArgumentParser(description='Train a detector')
-    parser.add_argument('--config', help='train config file path',default='HTCL/code/projects/configs/occupancy/semantickitti/temporal_baseline.py')
+    # parser.add_argument('config', default=None, help='train config file path')
+    parser.add_argument('--config', help='train config file path',default='HTCL/code/projects/configs/occupancy/semantickitti/temporal_baseline_ev.py')
     parser.add_argument('--work-dir', default="work_dirs/baseline_0630_temporal", help='the dir to save logs and models')
     parser.add_argument('--loadcheckpoint', default=None, 
         help="the dir to load models" )

@@ -118,7 +118,7 @@ def main(cfg):
         os.makedirs(out_dir, exist_ok=True)
 
         # downscaling = {"1_1": 1, "1_8": 8}
-        downscaling = {"1_1": 1}
+        downscaling = {"1_1": 1,"1_2": 2}
 
         for i in tqdm(range(len(label_paths))):
 

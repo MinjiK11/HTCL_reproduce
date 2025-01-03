@@ -15,6 +15,7 @@ from PIL import Image
 from pyquaternion import Quaternion
 from mmdet3d.core.bbox import LiDARInstance3DBoxes
 from .loading_bevdet import PhotoMetricDistortionMultiViewImage, mmlabNormalize
+from .ev2grid import Event
 
 from numpy import random
 import pdb
@@ -96,6 +97,7 @@ class LoadMultiViewImageFromFiles_SemanticKitti(object):
         
         self.colorjitter = colorjitter
         self.pipeline_colorjitter = PhotoMetricDistortionMultiViewImage()
+        self.ev2grid=Event()
 
     def get_rot(self,h):
         return torch.Tensor([
@@ -167,36 +169,89 @@ class LoadMultiViewImageFromFiles_SemanticKitti(object):
 
     def get_inputs(self, results, flip=None, scale=None):
                 
-
-        img_filenames = results['img_filename']  
+        img_filenames = results['img_filename']
 
         assert len(img_filenames) == 2
 
-        calib = results['calib'] 
+        calib = results['calib'] # focal length * baseline
 
+        img_filenames2 = img_filenames[1] # right img
+        img_filenames = img_filenames[0] # left img
 
-        img_filenames2 = img_filenames[1]
+        if results['input_modality']['use_camera']:
+            img2 = mmcv.imread(img_filenames2, 'unchanged')
+            img2 = Image.fromarray(img2)
+            H2 = img2.height
+            W2 = img2.width
 
-        img2 = mmcv.imread(img_filenames2, 'unchanged')
-        img2 = Image.fromarray(img2)
-        
-        # perform image-view augmentation
-        post_rot = torch.eye(2)
-        post_tran = torch.zeros(2)
-        
-        img_augs2 = self.sample_augmentation(H=img2.height, 
-                        W=img2.width, flip=flip, scale=scale)
+            # img augmentation
+            post_rot = torch.eye(2)
+            post_tran = torch.zeros(2)
 
-        resize, resize_dims, crop, flip, rotate = img_augs2
-        img2, post_rot2, post_tran2 = \
-            self.img_transform(img2, post_rot, post_tran, resize=resize, 
+            img_augs2 = self.sample_augmentation(H=H2, W=W2, flip=flip, scale=scale)
+            resize, resize_dims, crop, flip, rotate = img_augs2
+
+            img2, post_rot2, post_tran2 = \
+                self.img_transform(img2, post_rot, post_tran, resize=resize, 
                 resize_dims=resize_dims, crop=crop,flip=flip, rotate=rotate)  ### PIL
 
+            post_tran_2 = torch.zeros(3)
+            post_rot_2 = torch.eye(3)
+            post_tran_2[:2] = post_tran2
+            post_rot_2[:2, :2] = post_rot2
+
+            img = mmcv.imread(img_filenames, 'unchanged')
+            img = Image.fromarray(img)
+
+            img_augs = img_augs2
+            resize, resize_dims, crop, flip, rotate = img_augs
+
+            img, post_rot2, post_tran2 = \
+                self.img_transform(img, post_rot, post_tran, resize=resize, 
+                resize_dims=resize_dims, crop=crop,flip=flip, rotate=rotate)
+
+            post_tran_1 = torch.zeros(3)
+            post_rot_1 = torch.eye(3)
+            post_tran_1[:2] = post_tran2
+            post_rot_1[:2, :2] = post_rot2
+            
+            img_normalize=True
+
+
+        elif results['input_modality']['use_event']:
+            H2, W2 = self.data_config['input_size']
+
+            img2 = self.ev2grid.get_input_info_event(img_filenames2, W2, H2)
+
+            post_tran_2 = torch.zeros(3)
+            post_rot_2 = torch.eye(3)
+
+            img = self.ev2grid.get_input_info_event(img_filenames, W2, H2)
+
+            post_tran_1 = torch.zeros(3)
+            post_rot_1 = torch.eye(3)
+
+            img_normalize=False
+
+        # perform image-view augmentation
+        # post_rot = torch.eye(2)
+        # post_tran = torch.zeros(2)
+        
+        # img_augs2 = self.sample_augmentation(H=H2, 
+        #                 W=W2, flip=flip, scale=scale)
+
+        # resize, resize_dims, crop, flip, rotate = img_augs2
+        
+        # # rotation and translation matrix for applied augmentation
+        # img2, post_rot2, post_tran2 = \
+        #     self.img_transform(img2, post_rot, post_tran, resize=resize, 
+        #         resize_dims=resize_dims, crop=crop,flip=flip, rotate=rotate)  ### PIL
+
         # for convenience, make augmentation matrices 3x3
-        post_tran = torch.zeros(3)
-        post_rot = torch.eye(3)
-        post_tran[:2] = post_tran2
-        post_rot[:2, :2] = post_rot2
+        # post_tran = torch.zeros(3)
+        # post_rot = torch.eye(3)
+        # post_tran[:2] = post_tran2
+        # post_rot[:2, :2] = post_rot2
         
         # intrins
         intrin2 = torch.Tensor(results['cam_intrinsic'][1])
@@ -213,7 +268,8 @@ class LoadMultiViewImageFromFiles_SemanticKitti(object):
         if self.colorjitter and self.is_train:
             img2 = self.pipeline_colorjitter(img2)
         
-        img2 = self.normalize_img(img2, img_norm_cfg=self.img_norm_cfg)
+        if img_normalize:
+            img2 = self.normalize_img(img2, img_norm_cfg=self.img_norm_cfg)
         
      
         if self.load_depth:
@@ -228,35 +284,29 @@ class LoadMultiViewImageFromFiles_SemanticKitti(object):
         else:
             depth2 = torch.zeros(1)
         
-        res2 = [img2, rot2, tran2, intrin2, post_rot, post_tran, depth2, cam2lidar2, calib]
+        res2 = [img2, rot2, tran2, intrin2, post_rot_2, post_tran_2, depth2, cam2lidar2, calib]
         res2 = [x[None] for x in res2]
         
         results['canvas2'] = canvas2
-
-  
-        img_filenames = img_filenames[0]
-
-        img = mmcv.imread(img_filenames, 'unchanged')
-        img = Image.fromarray(img)
         
         # perform image-view augmentation
-        post_rot = torch.eye(2)
-        post_tran = torch.zeros(2)
+        # post_rot = torch.eye(2)
+        # post_tran = torch.zeros(2)
         
-        # img_augs = self.sample_augmentation(H=img.height, 
-        #                 W=img.width, flip=flip, scale=scale)
-        img_augs = img_augs2
+        # # img_augs = self.sample_augmentation(H=img.height, 
+        # #                 W=img.width, flip=flip, scale=scale)
+        # img_augs = img_augs2
 
-        resize, resize_dims, crop, flip, rotate = img_augs
-        img, post_rot2, post_tran2 = \
-            self.img_transform(img, post_rot, post_tran, resize=resize, 
-                resize_dims=resize_dims, crop=crop,flip=flip, rotate=rotate)
+        # resize, resize_dims, crop, flip, rotate = img_augs
+        # img, post_rot2, post_tran2 = \
+        #     self.img_transform(img, post_rot, post_tran, resize=resize, 
+        #         resize_dims=resize_dims, crop=crop,flip=flip, rotate=rotate)
 
         # for convenience, make augmentation matrices 3x3
-        post_tran = torch.zeros(3)
-        post_rot = torch.eye(3)
-        post_tran[:2] = post_tran2
-        post_rot[:2, :2] = post_rot2
+        # post_tran = torch.zeros(3)
+        # post_rot = torch.eye(3)
+        # post_tran[:2] = post_tran2
+        # post_rot[:2, :2] = post_rot2
         
         # intrins
         intrin = torch.Tensor(results['cam_intrinsic'][0])
@@ -273,7 +323,8 @@ class LoadMultiViewImageFromFiles_SemanticKitti(object):
         if self.colorjitter and self.is_train:
             img = self.pipeline_colorjitter(img)
         
-        img = self.normalize_img(img, img_norm_cfg=self.img_norm_cfg)
+        if img_normalize:
+            img = self.normalize_img(img, img_norm_cfg=self.img_norm_cfg)
         
         if self.load_depth:
             depth_filename = img_filenames.replace('image_2', 'image_depth_annotated')
@@ -287,7 +338,7 @@ class LoadMultiViewImageFromFiles_SemanticKitti(object):
         else:
             depth = torch.zeros(1)
         
-        res = [img, rot, tran, intrin, post_rot, post_tran, depth, cam2lidar, calib]
+        res = [img, rot, tran, intrin, post_rot_1, post_tran_1, depth, cam2lidar, calib]
         res = [x[None] for x in res]
         
         results['canvas'] = canvas
@@ -366,6 +417,8 @@ class LoadSemKittiAnnotation():
         
         self.apply_bda = apply_bda
 
+        self.ev2grid=Event()
+
     def sample_bda_augmentation(self):
         """Generate bda augmentation values based on bda_config."""
 
@@ -400,7 +453,12 @@ class LoadSemKittiAnnotation():
         imgs, rots, trans, intrins, post_rots, post_trans, gt_depths, sensor2sensors, calib = results['img_inputs'][0]
         imgs2, rots2, trans2, intrins2, post_rots2, post_trans2, gt_depths2, sensor2sensors2, calib = results['img_inputs'][1]
 
-        filenamesl, filenamesr = np.asarray(Image.open(results['img_filename'][0]).resize( ( 1280, 384 ), Image.LANCZOS) ),  np.asarray(Image.open(results['img_filename'][1]).resize( ( 1280, 384  ), Image.LANCZOS) ) 
+        if results['input_modality']['use_camera']:
+            filenamesl, filenamesr = np.asarray(Image.open(results['img_filename'][0]).resize( ( 1280, 384 ), Image.LANCZOS) ),  np.asarray(Image.open(results['img_filename'][1]).resize( ( 1280, 384  ), Image.LANCZOS) )  # poseNet input
+        elif results['input_modality']['use_event']:
+            H, W = (384,1280)
+            filenamesl, filenamesr = np.array(self.ev2grid.get_input_info_event_binlast(results['img_filename'][0],W,H)), np.array(self.ev2grid.get_input_info_event_binlast(results['img_filename'][0],W,H))
+
         results['img_inputs'] = ([imgs, rots, trans, intrins, post_rots, post_trans, bda_rot, gt_depths, sensor2sensors, calib, filenamesl],  [imgs2, rots2, trans2, intrins2, post_rots2, post_trans2, bda_rot, gt_depths2, sensor2sensors2, calib , filenamesr ] )
         results['gt_occ'] = gt_occ
         

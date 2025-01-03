@@ -49,6 +49,7 @@ def custom_encode_mask_results(mask_results):
 def custom_single_gpu_test(model, data_loader, show=False, out_dir=None, show_score_thr=0.3):
     model.eval()
     
+    out_dir='visualization'
     evaluation_semantic = 0
     dataset = data_loader.dataset
     prog_bar = mmcv.ProgressBar(len(dataset))
@@ -60,7 +61,11 @@ def custom_single_gpu_test(model, data_loader, show=False, out_dir=None, show_sc
         ssc_metric = SSCMetrics().cuda()
     
     logger.info(parameter_count_table(model))
-    
+
+    is_test_submission = out_dir is not None
+    if is_test_submission:
+        os.makedirs(out_dir, exist_ok=True)
+
     batch_size = 1
     for i, data in enumerate(data_loader):
         with torch.no_grad():
@@ -77,7 +82,15 @@ def custom_single_gpu_test(model, data_loader, show=False, out_dir=None, show_sc
             # semkitti SSC
             if is_semkitti:
                 ssc_metric.update(torch.argmax(result['output_voxels'], dim=1), result['target_voxels'])            
-        
+
+            if is_test_submission:
+                img_metas = data['img_metas'].data[0][0]
+                assert result['output_voxels'].shape[0] == 1
+                img_metas['sequence'], img_metas['frame_id']= img_metas['img_filename'][0].split('/')[-3],  img_metas['img_filename'][0].split('.')[-2].split('/')[-1]
+
+                save_output_semantic_kitti(result['output_voxels'][0], 
+                    out_dir, img_metas['sequence'], img_metas['frame_id'])
+
         # logging evaluation_semantic
         if is_semkitti:
             scores = ssc_metric.compute()
@@ -111,7 +124,7 @@ def save_output_semantic_kitti(output_voxels, save_path,
     inv_map = get_inv_map()
     output_voxels = inv_map[output_voxels].astype(np.uint16)
     
-    save_folder = "{}/sequences/{}/predictions".format(save_path, sequence_id)
+    save_folder = "{}/sequences/{}/predictions_RGB_sort".format(save_path, sequence_id)
     save_file = os.path.join(save_folder, "{}.label".format(frame_id))
     os.makedirs(save_folder, exist_ok=True)
     
@@ -180,6 +193,91 @@ def save_output_semantic_kitti(output_voxels, save_path,
     
 #     return res
 
+# def custom_multi_gpu_test(model, data_loader, tmpdir=None,
+#         gpu_collect=False, test_save=None):
+#     """Test model with multiple gpus.
+#     This method tests model with multiple gpus and collects the results
+#     under two different modes: gpu and cpu modes. By setting 'gpu_collect=True'
+#     it encodes results to gpu tensors and use gpu communication for results
+#     collection. On cpu mode it saves the results on different gpus to 'tmpdir'
+#     and collects them by the rank 0 worker.
+#     Args:
+#         model (nn.Module): Model to be tested.
+#         data_loader (nn.Dataloader): Pytorch data loader.
+#         tmpdir (str): Path of directory to save the temporary results from
+#             different gpus under cpu mode.
+#         gpu_collect (bool): Option to use either gpu or cpu to collect results.
+#     Returns:
+#         list: The prediction results.
+#     """
+    
+#     model.eval()
+#     dataset = data_loader.dataset
+#     rank, world_size = get_dist_info()
+#     if rank == 0:
+#         prog_bar = mmcv.ProgressBar(len(dataset))
+        
+#     ssc_results = []
+#     ssc_metric = SSCMetrics().cuda()
+    
+#     time.sleep(2)  # This line can prevent deadlock problem in some cases.
+    
+#     logger = get_root_logger()
+#     logger.info(parameter_count_table(model))
+    
+#     is_test_submission = test_save is not None
+#     if is_test_submission:
+#         os.makedirs(test_save, exist_ok=True)
+    
+#     # evaluate lidarseg
+#     evaluation_semantic = 0
+    
+#     batch_size = 1
+#     for i, data in enumerate(data_loader):
+        
+#         with torch.no_grad():
+#             result = model(return_loss=False, rescale=True, **data)
+            
+#         # nusc lidar segmentation
+#         if 'evaluation_semantic' in result:
+#             evaluation_semantic += result['evaluation_semantic']
+        
+#         # occupancy prediction
+#         if is_test_submission:
+#             img_metas = data['img_metas'].data[0][0]
+#             assert result['output_voxels'].shape[0] == 1
+#             img_metas['sequence'], img_metas['frame_id']= img_metas['img_filename'][0].split('/')[-3],  img_metas['img_filename'][0].split('.')[-2].split('/')[-1]
+
+#             save_output_semantic_kitti(result['output_voxels'][0], 
+#                 test_save, img_metas['sequence'], img_metas['frame_id'])
+        
+#         else:
+#             ssc_results_i = ssc_metric.compute_single(
+#                 y_pred=torch.argmax(result['output_voxels'], dim=1), 
+#                 y_true=result['target_voxels'],
+#             )
+#             ssc_results.append(ssc_results_i)
+#             # ssc_results.append( [ [result['output_voxels']], [torch.argmax(result['output_voxels'], dim=1)], [result['target_voxels']]  ]  )
+#         # print(img_metas['sequence'], img_metas['frame_id'])   
+
+#         if rank == 0:
+#             for _ in range(batch_size * world_size):
+#                 prog_bar.update()
+    
+#     if is_test_submission:
+#         return None
+    
+#     res = {}
+#     res['ssc_results'] = collect_results_cpu(ssc_results, len(dataset), tmpdir)
+    
+#     if type(evaluation_semantic) is np.ndarray:
+#         # convert to tensor for reduce_sum
+#         evaluation_semantic = torch.from_numpy(evaluation_semantic).cuda()
+#         dist.all_reduce(evaluation_semantic, op=dist.ReduceOp.SUM)
+#         res['evaluation_semantic'] = evaluation_semantic.cpu().numpy()
+    
+#     return res
+
 def custom_multi_gpu_test(model, data_loader, tmpdir=None,
         gpu_collect=False, test_save=None):
     """Test model with multiple gpus.
@@ -238,12 +336,12 @@ def custom_multi_gpu_test(model, data_loader, tmpdir=None,
             save_output_semantic_kitti(result['output_voxels'][0], 
                 test_save, img_metas['sequence'], img_metas['frame_id'])
         
-        else:
-            ssc_results_i = ssc_metric.compute_single(
-                y_pred=torch.argmax(result['output_voxels'], dim=1), 
-                y_true=result['target_voxels'],
-            )
-            ssc_results.append(ssc_results_i)
+        
+        ssc_results_i = ssc_metric.compute_single(
+            y_pred=torch.argmax(result['output_voxels'], dim=1), 
+            y_true=result['target_voxels'],
+        )
+        ssc_results.append(ssc_results_i)
             # ssc_results.append( [ [result['output_voxels']], [torch.argmax(result['output_voxels'], dim=1)], [result['target_voxels']]  ]  )
         # print(img_metas['sequence'], img_metas['frame_id'])   
 
@@ -251,8 +349,8 @@ def custom_multi_gpu_test(model, data_loader, tmpdir=None,
             for _ in range(batch_size * world_size):
                 prog_bar.update()
     
-    if is_test_submission:
-        return None
+    # if is_test_submission:
+    #     return None
     
     res = {}
     res['ssc_results'] = collect_results_cpu(ssc_results, len(dataset), tmpdir)

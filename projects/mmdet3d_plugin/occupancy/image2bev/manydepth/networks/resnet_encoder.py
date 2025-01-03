@@ -107,7 +107,7 @@ class ResnetEncoderMatching(nn.Module):
             _K = K[batch_idx:batch_idx + 1]
             _invK = invK[batch_idx:batch_idx + 1]
  
-            world_points = self.backprojector(self.warp_depths, _invK)
+            world_points = self.backprojector(self.warp_depths, _invK) # depth img -> point cloud
 
 
             waped_feature = []
@@ -120,7 +120,7 @@ class ResnetEncoderMatching(nn.Module):
                 if lookup_pose.sum() == 0:
                     continue
 
-                lookup_feat = lookup_feat.repeat([self.num_depth_bins, 1, 1, 1])  
+                lookup_feat = lookup_feat.repeat([self.num_depth_bins, 1, 1, 1]) 
                 pix_locs = self.projector(world_points, _K, lookup_pose)
                 warped = F.grid_sample(lookup_feat, pix_locs, padding_mode='zeros', mode='bilinear',
                                     align_corners=True)  #
@@ -452,7 +452,7 @@ class Project3D(nn.Module):
 
         cam_points = torch.matmul(P, points)
 
-        pix_coords = cam_points[:, :2, :] / (cam_points[:, 2, :].unsqueeze(1) + self.eps)
+        pix_coords = cam_points[:, :2, :] / (cam_points[:, 2, :].unsqueeze(1) + self.eps) # warped 2D pixel coord. (historic frame -> current frame)
         pix_coords = pix_coords.view(self.batch_size, 2, self.height, self.width)
         pix_coords = pix_coords.permute(0, 2, 3, 1)
         pix_coords[..., 0] /= self.width - 1

@@ -28,7 +28,7 @@ class CustomSemanticKITTILssDataset(CustomSemanticKITTIDataset):
     This datset only add camera intrinsics and extrinsics to the results.
     """
 
-    def __init__(self, random_camera=False, cbgs=False, repeat=1, queue_length=1, load_multi_voxel=False, *args, **kwargs):
+    def __init__(self, random_camera=False, cbgs=False, repeat=1, queue_length=1, load_multi_voxel=False,*args, **kwargs):
         super(CustomSemanticKITTILssDataset, self).__init__(*args, **kwargs)
         self.queue_length = queue_length
         self.random_camera = random_camera
@@ -235,6 +235,7 @@ class CustomSemanticKITTILssDataset(CustomSemanticKITTIDataset):
 
     def get_ann_info(self, index):
         info = self.data_infos[index]['voxel_path']
+        # print("voxel_path:",info)
         if info is None:
             return None
 
@@ -266,7 +267,7 @@ class CustomSemanticKITTILssDataset(CustomSemanticKITTIDataset):
         input_dict = dict(
             occ_size = np.array(self.occ_size),
             pc_range = np.array(self.pc_range),
-            img_filename = info['img_2_path'] ,
+            img_filename = info['img_2_path'],
         )
         
         # load images, intrins, extrins, voxels
@@ -288,7 +289,7 @@ class CustomSemanticKITTILssDataset(CustomSemanticKITTIDataset):
 
 
         calib_info = self.read_calib_file(info['calib_path'])
-        calib = np.reshape(calib_info['P2'], [3, 4])[0, 0] * self.dynamic_baseline(calib_info)  
+        calib = np.reshape(calib_info['P2'], [3, 4])[0, 0] * self.dynamic_baseline(calib_info) # focal length * baseline (Z=(f*baseline)/disparity)
         # calib = np.reshape(calib_info['P2'], [3, 4])[0, 0] * 0.54
 
         input_dict.update(
@@ -306,6 +307,7 @@ class CustomSemanticKITTILssDataset(CustomSemanticKITTIDataset):
     
         # ground-truth in shape (256, 256, 32), XYZ order
         # TODO: how to do bird-eye-view augmentation for this? 
+        input_dict['input_modality'] = info['input_modality']
         input_dict['gt_occ'] = self.get_ann_info(index)
         return input_dict
 
@@ -324,7 +326,7 @@ class CustomSemanticKITTILssDataset(CustomSemanticKITTIDataset):
     def dynamic_baseline(self, calib_info):
         P3 =np.reshape(calib_info['P3'], [3,4])
         P =np.reshape(calib_info['P2'], [3,4])
-        baseline = P3[0,3]/(-P3[0,0]) - P[0,3]/(-P[0,0])
+        baseline = P3[0,3]/(-P3[0,0]) - P[0,3]/(-P[0,0]) # distance between two camera center
         return baseline
 
     def evaluate(self, results, logger=None, **kwargs):

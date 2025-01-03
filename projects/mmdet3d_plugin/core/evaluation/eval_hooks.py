@@ -89,6 +89,21 @@ class CustomDistEvalHook(BaseDistEvalHook):
             if self.save_best:
                 self._save_ckpt(runner, key_score)
 
+class EvalHook(BaseEvalHook):
+
+    def _do_evaluate(self, runner):
+        """perform evaluation and save ckpt."""
+        if not self._should_evaluate(runner):
+            return
+
+        from projects.mmdet3d_plugin.occupancy.apis.test import custom_single_gpu_test
+
+        results = custom_single_gpu_test(runner.model, self.dataloader, show=False)
+        runner.log_buffer.output['eval_iter_num'] = len(self.dataloader)
+        key_score = self.evaluate(runner, results)
+        if self.save_best:
+            self._save_ckpt(runner, key_score)
+    
 class OccDistEvalHook(BaseDistEvalHook):
     def __init__(self, *args, dynamic_intervals=None,  **kwargs):
         super(OccDistEvalHook, self).__init__(*args, **kwargs)
@@ -145,7 +160,8 @@ class OccDistEvalHook(BaseDistEvalHook):
             runner.model,
             self.dataloader,
             tmpdir=tmpdir,
-            gpu_collect=self.gpu_collect)
+            gpu_collect=self.gpu_collect,
+            test_save='/share/result/prediction')
         
         if runner.rank == 0:
             print('\n')

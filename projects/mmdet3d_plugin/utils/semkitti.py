@@ -5,6 +5,9 @@ import numpy as np
 
 import pdb
 
+import os
+os.environ['CUDA_LAUNCH_BLOCKING'] = "1"
+
 semantic_kitti_class_frequencies = np.array(
     [
         5.41773033e09,
